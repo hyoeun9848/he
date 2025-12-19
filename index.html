@@ -2,12 +2,12 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Block Blast Pastel Edition</title>
+    <title>Original Block Blast Clone</title>
     <style>
         :root {
-            --bg-color: #f5f5fa;
-            --grid-color: #e0e0e6;
-            --heart-color: #ff6478;
+            --bg-color: #f0f2f5;
+            --grid-color: #cbd5e0;
+            --heart-color: #ff4d6d;
         }
         body {
             background-color: var(--bg-color);
@@ -17,214 +17,250 @@
             justify-content: center;
             height: 100vh;
             margin: 0;
-            font-family: 'Malgun Gothic', sans-serif;
-            overflow: hidden;
+            font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+            user-select: none;
         }
-        #ui-container {
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        #heart-icon {
-            font-size: 40px;
-            color: var(--heart-color);
-            display: inline-block;
-            transition: transform 0.1s;
-        }
-        .beating {
-            animation: beat 0.4s ease-out;
-        }
-        @keyframes beat {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.4); }
-            100% { transform: scale(1); }
-        }
-        #score {
-            font-size: 32px;
-            font-weight: bold;
-            color: #505064;
-            margin-top: 5px;
-        }
-        canvas {
-            background-color: #fff;
-            border-radius: 10px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.05);
-            cursor: pointer;
-        }
+        #ui { text-align: center; margin-bottom: 10px; }
+        #heart { font-size: 35px; display: inline-block; color: var(--heart-color); }
+        .beat { animation: beat 0.3s ease-in-out; }
+        @keyframes beat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.3); } }
+        #score { font-size: 40px; font-weight: 800; color: #2d3748; margin: 0; }
+        
+        #game-container { position: relative; }
+        canvas { background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); touch-action: none; }
     </style>
 </head>
 <body>
 
-    <div id="ui-container">
-        <div id="heart-icon">❤️</div>
-        <div id="score">0</div>
+    <div id="ui">
+        <div id="heart">❤️</div>
+        <p id="score">0</p>
     </div>
-    <canvas id="gameCanvas"></canvas>
+    <div id="game-container">
+        <canvas id="canvas"></canvas>
+    </div>
 
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const scoreElement = document.getElementById('score');
-        const heartIcon = document.getElementById('heart-icon');
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const heartEl = document.getElementById('heart');
 
-        const GRID_SIZE = 8;
-        const CELL_SIZE = 45;
-        canvas.width = GRID_SIZE * CELL_SIZE;
-        canvas.height = GRID_SIZE * CELL_SIZE;
+const GRID_SIZE = 8;
+const CELL_SIZE = 45;
+const BOARD_SIZE = GRID_SIZE * CELL_SIZE;
+const BOTTOM_AREA_HEIGHT = 180;
 
-        let score = 0;
-        let board = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(0));
-        let particles = [];
+canvas.width = BOARD_SIZE + 40;
+canvas.height = BOARD_SIZE + BOTTOM_AREA_HEIGHT;
 
-        const PASTEL_COLORS = [
-            { base: '#FFB7B2', light: '#FFD1CF', shadow: '#E5A4A0' }, // 핑크
-            { base: '#FFDAC1', light: '#FFEBDC', shadow: '#E5C4AE' }, // 오렌지
-            { base: '#E2F0CB', light: '#EFF7E0', shadow: '#CBD8B6' }, // 그린
-            { base: '#B5EAD7', light: '#D2F3E8', shadow: '#A2D2C1' }, // 민트
-            { base: '#C7CEEA', light: '#E1E5F4', shadow: '#B3B9D2' }  // 퍼플
-        ];
+const COLORS = [
+    { b: '#FF9AA2', l: '#FFB7B2', s: '#E58A92' }, // 핑크
+    { b: '#FFDAC1', l: '#FFE5D9', s: '#E5C4AE' }, // 오렌지
+    { b: '#E2F0CB', l: '#F0F7E4', s: '#CBD8B6' }, // 그린
+    { b: '#B5EAD7', l: '#D2F3E8', s: '#A2D2C1' }, // 민트
+    { b: '#C7CEEA', l: '#E1E5F4', s: '#B3B9D2' }  // 퍼플
+];
 
-        function draw3DBlock(x, y, colorIdx) {
-            const color = PASTEL_COLORS[colorIdx];
-            const r = 6; // 둥근 모서리
+// 블록 모양 정의 (블록 블라스트 스타일)
+const SHAPES = [
+    [[1,1],[1,1]], // 2x2 사각형
+    [[1,1,1,1]],   // 4x1 막대
+    [[1],[1],[1],[1]], // 1x4 막대
+    [[1,1,1],[0,1,0]], // T자
+    [[1,0],[1,0],[1,1]], // L자
+    [[1,1,1],[1,0,0]], // 역L자
+    [[1]] // 1x1 점
+];
 
-            // 그림자/바닥
-            ctx.fillStyle = color.shadow;
-            fillRoundRect(x, y, CELL_SIZE, CELL_SIZE, r);
+let board = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(null));
+let hand = []; // 하단에 생성된 3개 블록
+let score = 0;
+let draggingBlock = null;
+let dragOffset = { x: 0, y: 0 };
+let particles = [];
 
-            // 메인 면
-            ctx.fillStyle = color.base;
-            fillRoundRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 6, r);
+// 게임 초기화: 하단 블록 3개 생성
+function generateHand() {
+    hand = [];
+    for(let i=0; i<3; i++) {
+        const shape = SHAPES[Math.floor(Math.random()*SHAPES.length)];
+        const colorIdx = Math.floor(Math.random()*COLORS.length);
+        hand.push({
+            shape, colorIdx,
+            x: 30 + i * 130,
+            y: BOARD_SIZE + 50,
+            initialX: 30 + i * 130,
+            initialY: BOARD_SIZE + 50,
+            width: shape[0].length * CELL_SIZE * 0.7,
+            height: shape.length * CELL_SIZE * 0.7
+        });
+    }
+}
 
-            // 하이라이트
-            ctx.strokeStyle = color.light;
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(x + 8, y + 5);
-            ctx.lineTo(x + CELL_SIZE - 8, y + 5);
-            ctx.stroke();
-        }
-
-        function fillRoundRect(x, y, w, h, r) {
-            ctx.beginPath();
-            ctx.roundRect(x, y, w, h, r);
-            ctx.fill();
-        }
-
-        function drawBoard() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            for (let r = 0; r < GRID_SIZE; r++) {
-                for (let c = 0; c < GRID_SIZE; c++) {
-                    const x = c * CELL_SIZE;
-                    const y = r * CELL_SIZE;
-
-                    // 격자 그리기
-                    ctx.strokeStyle = '#e0e0e6';
-                    ctx.lineWidth = 1;
-                    ctx.strokeRect(x, y, CELL_SIZE, CELL_SIZE);
-
-                    if (board[r][c] > 0) {
-                        draw3DBlock(x, y, board[r][c] - 1);
-                    }
-                }
-            }
-        }
-
-        function createParticles(r, c, colorIdx) {
-            for (let i = 0; i < 6; i++) {
-                particles.push({
-                    x: c * CELL_SIZE + CELL_SIZE / 2,
-                    y: r * CELL_SIZE + CELL_SIZE / 2,
-                    vx: (Math.random() - 0.5) * 10,
-                    vy: (Math.random() - 0.5) * 10,
-                    color: PASTEL_COLORS[colorIdx].base,
-                    life: 1.0
-                });
-            }
-        }
-
-        function checkLines() {
-            let rowsToClear = [];
-            let colsToClear = [];
-
-            for (let r = 0; r < GRID_SIZE; r++) {
-                if (board[r].every(cell => cell > 0)) rowsToClear.push(r);
-            }
-            for (let c = 0; c < GRID_SIZE; c++) {
-                let colFull = true;
-                for (let r = 0; r < GRID_SIZE; r++) {
-                    if (board[r][c] === 0) colFull = false;
-                }
-                if (colFull) colsToClear.push(c);
-            }
-
-            if (rowsToClear.length > 0 || colsToClear.length > 0) {
-                // 하트 애니메이션 재생
-                heartIcon.classList.remove('beating');
-                void heartIcon.offsetWidth; // 리플로우 강제
-                heartIcon.classList.add('beating');
-
-                rowsToClear.forEach(r => {
-                    for (let c = 0; c < GRID_SIZE; c++) {
-                        createParticles(r, c, board[r][c] - 1);
-                        board[r][c] = 0;
-                    }
-                });
-                colsToClear.forEach(c => {
-                    for (let r = 0; r < GRID_SIZE; r++) {
-                        if (board[r][c] > 0) {
-                            createParticles(r, c, board[r][c] - 1);
-                            board[r][c] = 0;
-                        }
-                    }
-                });
-
-                score += (rowsToClear.length + colsToClear.length) * 100;
-                scoreElement.innerText = score;
-            }
-        }
-
-        canvas.addEventListener('mousedown', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            const c = Math.floor(x / CELL_SIZE);
-            const r = Math.floor(y / CELL_SIZE);
-
-            if (r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE) {
-                if (board[r][c] === 0) {
-                    board[r][c] = Math.floor(Math.random() * PASTEL_COLORS.length) + 1;
-                    checkLines();
-                }
+function drawBlock(ctx, shape, x, y, colorIdx, scale = 1) {
+    const size = CELL_SIZE * scale;
+    const color = COLORS[colorIdx];
+    shape.forEach((row, r) => {
+        row.forEach((cell, c) => {
+            if(cell) {
+                const bx = x + c * size;
+                const by = y + r * size;
+                // 입체 효과
+                ctx.fillStyle = color.s;
+                ctx.beginPath(); ctx.roundRect(bx, by, size, size, 4); ctx.fill();
+                ctx.fillStyle = color.b;
+                ctx.beginPath(); ctx.roundRect(bx+2, by+2, size-4, size-6, 4); ctx.fill();
+                ctx.strokeStyle = color.l; ctx.lineWidth = 2;
+                ctx.strokeRect(bx+6, by+4, size-12, 1);
             }
         });
+    });
+}
 
-        function updateParticles() {
-            for (let i = particles.length - 1; i >= 0; i--) {
-                const p = particles[i];
-                p.x += p.vx;
-                p.y += p.vy;
-                p.life -= 0.05;
-                if (p.life <= 0) {
-                    particles.splice(i, 1);
-                } else {
-                    ctx.globalAlpha = p.life;
-                    ctx.fillStyle = p.color;
-                    ctx.beginPath();
-                    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-                    ctx.fill();
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // 보드 배경
+    ctx.translate(20, 20);
+    for(let r=0; r<GRID_SIZE; r++) {
+        for(let c=0; c<GRID_SIZE; c++) {
+            ctx.fillStyle = '#edf2f7';
+            ctx.beginPath();
+            ctx.roundRect(c*CELL_SIZE, r*CELL_SIZE, CELL_SIZE-2, CELL_SIZE-2, 4);
+            ctx.fill();
+            if(board[r][c] !== null) {
+                drawBlock(ctx, [[1]], c*CELL_SIZE, r*CELL_SIZE, board[r][c], 1);
+            }
+        }
+    }
+    ctx.translate(-20, -20);
+
+    // 하단 핸드 블록
+    hand.forEach(b => {
+        if(b !== draggingBlock) {
+            drawBlock(ctx, b.shape, b.x, b.y, b.colorIdx, 0.7);
+        }
+    });
+
+    // 드래그 중인 블록
+    if(draggingBlock) {
+        drawBlock(ctx, draggingBlock.shape, draggingBlock.x, draggingBlock.y, draggingBlock.colorIdx, 1);
+    }
+
+    // 파티클
+    updateParticles();
+}
+
+function updateParticles() {
+    particles.forEach((p, i) => {
+        p.x += p.vx; p.y += p.vy; p.alpha -= 0.05;
+        if(p.alpha <= 0) particles.splice(i, 1);
+        else {
+            ctx.globalAlpha = p.alpha;
+            ctx.fillStyle = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2); ctx.fill();
+        }
+    });
+    ctx.globalAlpha = 1;
+}
+
+// 드래그 로직
+canvas.addEventListener('mousedown', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    hand.forEach(b => {
+        if(mx > b.x && mx < b.x + b.width && my > b.y && my < b.y + b.height) {
+            draggingBlock = b;
+            dragOffset.x = mx - b.x;
+            dragOffset.y = my - b.y;
+        }
+    });
+});
+
+window.addEventListener('mousemove', e => {
+    if(!draggingBlock) return;
+    const rect = canvas.getBoundingClientRect();
+    draggingBlock.x = e.clientX - rect.left - dragOffset.x;
+    draggingBlock.y = e.clientY - rect.top - dragOffset.y;
+});
+
+window.addEventListener('mouseup', e => {
+    if(!draggingBlock) return;
+    
+    const bx = Math.round((draggingBlock.x - 20) / CELL_SIZE);
+    const by = Math.round((draggingBlock.y - 20) / CELL_SIZE);
+
+    if(canPlace(draggingBlock.shape, by, bx)) {
+        placeBlock(draggingBlock.shape, by, bx, draggingBlock.colorIdx);
+        hand = hand.filter(b => b !== draggingBlock);
+        if(hand.length === 0) generateHand();
+        checkLines();
+    } else {
+        draggingBlock.x = draggingBlock.initialX;
+        draggingBlock.y = draggingBlock.initialY;
+    }
+    draggingBlock = null;
+});
+
+function canPlace(shape, row, col) {
+    for(let r=0; r<shape.length; r++) {
+        for(let c=0; c<shape[r].length; c++) {
+            if(shape[r][c]) {
+                if(row+r < 0 || row+r >= GRID_SIZE || col+c < 0 || col+c >= GRID_SIZE || board[row+r][col+c] !== null) {
+                    return false;
                 }
             }
-            ctx.globalAlpha = 1.0;
         }
+    }
+    return true;
+}
 
-        function gameLoop() {
-            drawBoard();
-            updateParticles();
-            requestAnimationFrame(gameLoop);
-        }
+function placeBlock(shape, row, col, colorIdx) {
+    shape.forEach((rArr, r) => {
+        rArr.forEach((cell, c) => {
+            if(cell) board[row+r][col+c] = colorIdx;
+        });
+    });
+}
 
-        gameLoop();
-    </script>
+function checkLines() {
+    let rClear = [], cClear = [];
+    for(let r=0; r<GRID_SIZE; r++) if(board[r].every(v => v !== null)) rClear.push(r);
+    for(let c=0; c<GRID_SIZE; c++) {
+        let full = true;
+        for(let r=0; r<GRID_SIZE; r++) if(board[r][c] === null) full = false;
+        if(full) cClear.push(c);
+    }
+
+    if(rClear.length || cClear.length) {
+        heartEl.classList.remove('beat'); void heartEl.offsetWidth; heartEl.classList.add('beat');
+        rClear.forEach(r => {
+            for(let c=0; c<GRID_SIZE; c++) spawnParticles(r, c, board[r][c]), board[r][c] = null;
+        });
+        cClear.forEach(c => {
+            for(let r=0; r<GRID_SIZE; r++) if(board[r][c]!==null) spawnParticles(r, c, board[r][c]), board[r][c] = null;
+        });
+        score += (rClear.length + cClear.length) * 100;
+        scoreEl.innerText = score;
+    }
+}
+
+function spawnParticles(r, c, colorIdx) {
+    for(let i=0; i<5; i++) {
+        particles.push({
+            x: 20 + c*CELL_SIZE + 22, y: 20 + r*CELL_SIZE + 22,
+            vx: (Math.random()-0.5)*8, vy: (Math.random()-0.5)*8,
+            alpha: 1, color: COLORS[colorIdx].b
+        });
+    }
+}
+
+generateHand();
+function loop() { draw(); requestAnimationFrame(loop); }
+loop();
+</script>
 </body>
 </html>
