@@ -1,171 +1,230 @@
-import pygame
-import sys
-import math
-import random
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Block Blast Pastel Edition</title>
+    <style>
+        :root {
+            --bg-color: #f5f5fa;
+            --grid-color: #e0e0e6;
+            --heart-color: #ff6478;
+        }
+        body {
+            background-color: var(--bg-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'Malgun Gothic', sans-serif;
+            overflow: hidden;
+        }
+        #ui-container {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        #heart-icon {
+            font-size: 40px;
+            color: var(--heart-color);
+            display: inline-block;
+            transition: transform 0.1s;
+        }
+        .beating {
+            animation: beat 0.4s ease-out;
+        }
+        @keyframes beat {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.4); }
+            100% { transform: scale(1); }
+        }
+        #score {
+            font-size: 32px;
+            font-weight: bold;
+            color: #505064;
+            margin-top: 5px;
+        }
+        canvas {
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
 
-# 기본 설정
-SCREEN_WIDTH = 440
-SCREEN_HEIGHT = 650
-GRID_SIZE = 8
-CELL_SIZE = 45
-BOARD_OFFSET_X = (SCREEN_WIDTH - (GRID_SIZE * CELL_SIZE)) // 2
-BOARD_OFFSET_Y = 100
+    <div id="ui-container">
+        <div id="heart-icon">❤️</div>
+        <div id="score">0</div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
 
-# 파스텔톤 색상 팔레트
-BG_COLOR = (245, 245, 250)
-GRID_COLOR = (220, 220, 230)
-WHITE = (255, 255, 255)
-PASTEL_COLORS = [
-    (255, 183, 178), # 핑크
-    (255, 218, 193), # 오렌지
-    (226, 240, 203), # 그린
-    (181, 234, 215), # 민트
-    (199, 206, 234), # 퍼플
-]
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const heartIcon = document.getElementById('heart-icon');
 
-class BlockBlast:
-    def __init__(self):
-        pygame.init()
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("Beating Heart Block Blast")
-        self.clock = pygame.time.Clock()
-        self.font = pygame.font.SysFont("malgungothic", 30, bold=True)
-        
-        # 보드 초기화 (0은 빈칸, 그 외 숫자는 색상 인덱스 + 1)
-        self.board = [[0 for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
-        self.score = 0
-        
-        # 애니메이션 상태 변수
-        self.heart_scale = 1.0
-        self.heart_timer = 0
-        self.particles = [] # 줄 삭제 효과용 파티클
+        const GRID_SIZE = 8;
+        const CELL_SIZE = 45;
+        canvas.width = GRID_SIZE * CELL_SIZE;
+        canvas.height = GRID_SIZE * CELL_SIZE;
 
-    def draw_3d_block(self, x, y, color_idx, alpha=255):
-        """입체감이 느껴지는 파스텔 블록 그리기"""
-        base_color = PASTEL_COLORS[color_idx]
-        light_color = tuple(min(255, c + 30) for c in base_color)
-        shadow_color = tuple(max(0, c - 40) for c in base_color)
-        
-        rect = pygame.Rect(x, y, CELL_SIZE, CELL_SIZE)
-        # 그림자/입체 바닥
-        pygame.draw.rect(self.screen, shadow_color, rect, border_radius=4)
-        # 메인 면
-        inner_rect = pygame.Rect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 6)
-        pygame.draw.rect(self.screen, base_color, inner_rect, border_radius=4)
-        # 하이라이트 (상단)
-        pygame.draw.line(self.screen, light_color, (x + 5, y + 4), (x + CELL_SIZE - 5, y + 4), 3)
+        let score = 0;
+        let board = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(0));
+        let particles = [];
 
-    def draw_board(self):
-        """격자판 및 배치된 블록 그리기"""
-        for r in range(GRID_SIZE):
-            for c in range(GRID_SIZE):
-                x = BOARD_OFFSET_X + c * CELL_SIZE
-                y = BOARD_OFFSET_Y + r * CELL_SIZE
-                rect = pygame.Rect(x, y, CELL_SIZE, CELL_SIZE)
-                
-                # 배경 격자
-                pygame.draw.rect(self.screen, GRID_COLOR, rect, 1, border_radius=2)
-                
-                if self.board[r][c] > 0:
-                    self.draw_3d_block(x, y, self.board[r][c] - 1)
+        const PASTEL_COLORS = [
+            { base: '#FFB7B2', light: '#FFD1CF', shadow: '#E5A4A0' }, // 핑크
+            { base: '#FFDAC1', light: '#FFEBDC', shadow: '#E5C4AE' }, // 오렌지
+            { base: '#E2F0CB', light: '#EFF7E0', shadow: '#CBD8B6' }, // 그린
+            { base: '#B5EAD7', light: '#D2F3E8', shadow: '#A2D2C1' }, // 민트
+            { base: '#C7CEEA', light: '#E1E5F4', shadow: '#B3B9D2' }  // 퍼플
+        ];
 
-    def create_particles(self, r, c, color_idx):
-        """줄이 삭제될 때 흩어지는 파티클 생성"""
-        for _ in range(5):
-            px = BOARD_OFFSET_X + c * CELL_SIZE + CELL_SIZE // 2
-            py = BOARD_OFFSET_Y + r * CELL_SIZE + CELL_SIZE // 2
-            self.particles.append({
-                'pos': [px, py],
-                'vel': [random.uniform(-3, 3), random.uniform(-3, 3)],
-                'color': PASTEL_COLORS[color_idx],
-                'life': 255
-            })
+        function draw3DBlock(x, y, colorIdx) {
+            const color = PASTEL_COLORS[colorIdx];
+            const r = 6; // 둥근 모서리
 
-    def check_lines(self):
-        """줄 확인 및 삭제 로직"""
-        rows_to_clear = [r for r, row in enumerate(self.board) if all(row)]
-        cols_to_clear = [c for c in range(GRID_SIZE) if all(self.board[r][c] for r in range(GRID_SIZE))]
+            // 그림자/바닥
+            ctx.fillStyle = color.shadow;
+            fillRoundRect(x, y, CELL_SIZE, CELL_SIZE, r);
 
-        if rows_to_clear or cols_to_clear:
-            self.heart_timer = 20  # 하트 애니메이션 트리거
+            // 메인 면
+            ctx.fillStyle = color.base;
+            fillRoundRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 6, r);
+
+            // 하이라이트
+            ctx.strokeStyle = color.light;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(x + 8, y + 5);
+            ctx.lineTo(x + CELL_SIZE - 8, y + 5);
+            ctx.stroke();
+        }
+
+        function fillRoundRect(x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.roundRect(x, y, w, h, r);
+            ctx.fill();
+        }
+
+        function drawBoard() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            # 파티클 생성 및 삭제
-            for r in rows_to_clear:
-                for c in range(GRID_SIZE):
-                    self.create_particles(r, c, self.board[r][c]-1)
-                    self.board[r][c] = 0
-            for c in cols_to_clear:
-                for r in range(GRID_SIZE):
-                    if self.board[r][c] > 0:
-                        self.create_particles(r, c, self.board[r][c]-1)
-                        self.board[r][c] = 0
-            
-            self.score += (len(rows_to_clear) + len(cols_to_clear)) * 100
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    const x = c * CELL_SIZE;
+                    const y = r * CELL_SIZE;
 
-    def draw_heart_score(self):
-        """점수와 심장 박동 하트 효과 그리기"""
-        # 하트 크기 계산 (Sin 곡선을 이용한 박동)
-        if self.heart_timer > 0:
-            self.heart_scale = 1.0 + 0.3 * math.sin(self.heart_timer * 0.5)
-            self.heart_timer -= 1
-        else:
-            self.heart_scale = 1.0
+                    // 격자 그리기
+                    ctx.strokeStyle = '#e0e0e6';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x, y, CELL_SIZE, CELL_SIZE);
 
-        center_x, center_y = SCREEN_WIDTH // 2, 50
-        
-        # 하트 모양 그리기 (폴리곤)
-        heart_color = (255, 100, 120)
-        size = 20 * self.heart_scale
-        heart_points = [
-            (center_x, center_y + size),
-            (center_x - size * 1.5, center_y - size * 0.5),
-            (center_x - size, center_y - size * 1.5),
-            (center_x, center_y - size * 0.5),
-            (center_x + size, center_y - size * 1.5),
-            (center_x + size * 1.5, center_y - size * 0.5),
-        ]
-        pygame.draw.polygon(self.screen, heart_color, heart_points)
-        
-        # 점수 텍스트
-        score_surf = self.font.render(f"{self.score}", True, (80, 80, 100))
-        self.screen.blit(score_surf, (center_x - score_surf.get_width()//2, 60))
+                    if (board[r][c] > 0) {
+                        draw3DBlock(x, y, board[r][c] - 1);
+                    }
+                }
+            }
+        }
 
-    def update_particles(self):
-        """파티클 애니메이션 업데이트"""
-        for p in self.particles[:]:
-            p['pos'][0] += p['vel'][0]
-            p['pos'][1] += p['vel'][1]
-            p['life'] -= 10
-            if p['life'] <= 0:
-                self.particles.remove(p)
-            else:
-                pygame.draw.circle(self.screen, p['color'], (int(p['pos'][0]), int(p['pos'][1])), 4)
+        function createParticles(r, c, colorIdx) {
+            for (let i = 0; i < 6; i++) {
+                particles.push({
+                    x: c * CELL_SIZE + CELL_SIZE / 2,
+                    y: r * CELL_SIZE + CELL_SIZE / 2,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 0.5) * 10,
+                    color: PASTEL_COLORS[colorIdx].base,
+                    life: 1.0
+                });
+            }
+        }
 
-    def run(self):
-        while True:
-            self.screen.fill(BG_COLOR)
-            self.draw_board()
-            self.draw_heart_score()
-            self.update_particles()
-            
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
-                
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    pos = pygame.mouse.get_pos()
-                    c = (pos[0] - BOARD_OFFSET_X) // CELL_SIZE
-                    r = (pos[1] - BOARD_OFFSET_Y) // CELL_SIZE
-                    if 0 <= r < GRID_SIZE and 0 <= c < GRID_SIZE:
-                        # 클릭 시 랜덤한 파스텔 색상 블록 배치
-                        if self.board[r][c] == 0:
-                            self.board[r][c] = random.randint(1, len(PASTEL_COLORS))
-                            self.check_lines()
+        function checkLines() {
+            let rowsToClear = [];
+            let colsToClear = [];
 
-            pygame.display.flip()
-            self.clock.tick(60)
+            for (let r = 0; r < GRID_SIZE; r++) {
+                if (board[r].every(cell => cell > 0)) rowsToClear.push(r);
+            }
+            for (let c = 0; c < GRID_SIZE; c++) {
+                let colFull = true;
+                for (let r = 0; r < GRID_SIZE; r++) {
+                    if (board[r][c] === 0) colFull = false;
+                }
+                if (colFull) colsToClear.push(c);
+            }
 
-if __name__ == "__main__":
-    game = BlockBlast()
-    game.run()
+            if (rowsToClear.length > 0 || colsToClear.length > 0) {
+                // 하트 애니메이션 재생
+                heartIcon.classList.remove('beating');
+                void heartIcon.offsetWidth; // 리플로우 강제
+                heartIcon.classList.add('beating');
+
+                rowsToClear.forEach(r => {
+                    for (let c = 0; c < GRID_SIZE; c++) {
+                        createParticles(r, c, board[r][c] - 1);
+                        board[r][c] = 0;
+                    }
+                });
+                colsToClear.forEach(c => {
+                    for (let r = 0; r < GRID_SIZE; r++) {
+                        if (board[r][c] > 0) {
+                            createParticles(r, c, board[r][c] - 1);
+                            board[r][c] = 0;
+                        }
+                    }
+                });
+
+                score += (rowsToClear.length + colsToClear.length) * 100;
+                scoreElement.innerText = score;
+            }
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const c = Math.floor(x / CELL_SIZE);
+            const r = Math.floor(y / CELL_SIZE);
+
+            if (r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE) {
+                if (board[r][c] === 0) {
+                    board[r][c] = Math.floor(Math.random() * PASTEL_COLORS.length) + 1;
+                    checkLines();
+                }
+            }
+        });
+
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= 0.05;
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                } else {
+                    ctx.globalAlpha = p.life;
+                    ctx.fillStyle = p.color;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            ctx.globalAlpha = 1.0;
+        }
+
+        function gameLoop() {
+            drawBoard();
+            updateParticles();
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
