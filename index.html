@@ -2,103 +2,91 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Original Block Blast Clone</title>
+    <title>Perfect Block Blast</title>
     <style>
-        :root {
-            --bg-color: #f0f2f5;
-            --grid-color: #cbd5e0;
-            --heart-color: #ff4d6d;
-        }
         body {
-            background-color: var(--bg-color);
+            background-color: #f8f9fa;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             height: 100vh;
             margin: 0;
-            font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+            font-family: sans-serif;
+            overflow: hidden;
             user-select: none;
         }
-        #ui { text-align: center; margin-bottom: 10px; }
-        #heart { font-size: 35px; display: inline-block; color: var(--heart-color); }
-        .beat { animation: beat 0.3s ease-in-out; }
-        @keyframes beat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.3); } }
-        #score { font-size: 40px; font-weight: 800; color: #2d3748; margin: 0; }
-        
-        #game-container { position: relative; }
-        canvas { background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); touch-action: none; }
+        #score-container { text-align: center; margin-bottom: 15px; }
+        #heart { font-size: 40px; color: #ff4d6d; display: inline-block; transition: transform 0.2s; }
+        .beating { transform: scale(1.4); }
+        #score { font-size: 45px; font-weight: bold; color: #333; margin: 5px 0; }
+        canvas { 
+            background: #fff; 
+            border-radius: 15px; 
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1); 
+            touch-action: none;
+        }
     </style>
 </head>
 <body>
 
-    <div id="ui">
+    <div id="score-container">
         <div id="heart">❤️</div>
-        <p id="score">0</p>
+        <div id="score">0</div>
     </div>
-    <div id="game-container">
-        <canvas id="canvas"></canvas>
-    </div>
+    <canvas id="gameCanvas"></canvas>
 
 <script>
-const canvas = document.getElementById('canvas');
+const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const scoreEl = document.getElementById('score');
 const heartEl = document.getElementById('heart');
 
 const GRID_SIZE = 8;
-const CELL_SIZE = 45;
-const BOARD_SIZE = GRID_SIZE * CELL_SIZE;
-const BOTTOM_AREA_HEIGHT = 180;
+const CELL_SIZE = 48; // 칸 크기 확대
+const BOARD_OFFSET = 20;
+const BOTTOM_HEIGHT = 180;
 
-canvas.width = BOARD_SIZE + 40;
-canvas.height = BOARD_SIZE + BOTTOM_AREA_HEIGHT;
+canvas.width = (GRID_SIZE * CELL_SIZE) + (BOARD_OFFSET * 2);
+canvas.height = canvas.width + BOTTOM_HEIGHT;
 
 const COLORS = [
-    { b: '#FF9AA2', l: '#FFB7B2', s: '#E58A92' }, // 핑크
-    { b: '#FFDAC1', l: '#FFE5D9', s: '#E5C4AE' }, // 오렌지
-    { b: '#E2F0CB', l: '#F0F7E4', s: '#CBD8B6' }, // 그린
+    { b: '#FFB7B2', l: '#FFD1CF', s: '#E5A4A0' }, // 핑크
+    { b: '#FFDAC1', l: '#FFEBDC', s: '#E5C4AE' }, // 오렌지
+    { b: '#E2F0CB', l: '#EFF7E0', s: '#CBD8B6' }, // 그린
     { b: '#B5EAD7', l: '#D2F3E8', s: '#A2D2C1' }, // 민트
     { b: '#C7CEEA', l: '#E1E5F4', s: '#B3B9D2' }  // 퍼플
 ];
 
-// 블록 모양 정의 (블록 블라스트 스타일)
 const SHAPES = [
-    [[1,1],[1,1]], // 2x2 사각형
-    [[1,1,1,1]],   // 4x1 막대
-    [[1],[1],[1],[1]], // 1x4 막대
-    [[1,1,1],[0,1,0]], // T자
-    [[1,0],[1,0],[1,1]], // L자
-    [[1,1,1],[1,0,0]], // 역L자
-    [[1]] // 1x1 점
+    [[1,1],[1,1]], [[1,1,1,1]], [[1],[1],[1],[1]], 
+    [[1,1,1],[0,1,0]], [[1,0],[1,0],[1,1]], [[1,1,1],[1,0,0]], [[1]]
 ];
 
 let board = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(null));
-let hand = []; // 하단에 생성된 3개 블록
+let hand = [];
 let score = 0;
 let draggingBlock = null;
-let dragOffset = { x: 0, y: 0 };
-let particles = [];
+let mouseX = 0, mouseY = 0;
 
-// 게임 초기화: 하단 블록 3개 생성
-function generateHand() {
+function createHand() {
     hand = [];
     for(let i=0; i<3; i++) {
-        const shape = SHAPES[Math.floor(Math.random()*SHAPES.length)];
-        const colorIdx = Math.floor(Math.random()*COLORS.length);
+        const shape = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+        const colorIdx = Math.floor(Math.random() * COLORS.length);
         hand.push({
             shape, colorIdx,
-            x: 30 + i * 130,
-            y: BOARD_SIZE + 50,
-            initialX: 30 + i * 130,
-            initialY: BOARD_SIZE + 50,
-            width: shape[0].length * CELL_SIZE * 0.7,
-            height: shape.length * CELL_SIZE * 0.7
+            x: 40 + i * 130,
+            y: canvas.width + 40,
+            origX: 40 + i * 130,
+            origY: canvas.width + 40,
+            w: shape[0].length * CELL_SIZE * 0.7,
+            h: shape.length * CELL_SIZE * 0.7
         });
     }
 }
 
-function drawBlock(ctx, shape, x, y, colorIdx, scale = 1) {
+function drawBlock(context, shape, x, y, colorIdx, scale = 1) {
     const size = CELL_SIZE * scale;
     const color = COLORS[colorIdx];
     shape.forEach((row, r) => {
@@ -106,102 +94,79 @@ function drawBlock(ctx, shape, x, y, colorIdx, scale = 1) {
             if(cell) {
                 const bx = x + c * size;
                 const by = y + r * size;
-                // 입체 효과
-                ctx.fillStyle = color.s;
-                ctx.beginPath(); ctx.roundRect(bx, by, size, size, 4); ctx.fill();
-                ctx.fillStyle = color.b;
-                ctx.beginPath(); ctx.roundRect(bx+2, by+2, size-4, size-6, 4); ctx.fill();
-                ctx.strokeStyle = color.l; ctx.lineWidth = 2;
-                ctx.strokeRect(bx+6, by+4, size-12, 1);
+                context.fillStyle = color.s;
+                context.beginPath(); context.roundRect(bx, by, size, size, 5); context.fill();
+                context.fillStyle = color.b;
+                context.beginPath(); context.roundRect(bx+2, by+2, size-4, size-6, 5); context.fill();
+                context.strokeStyle = color.l; context.lineWidth = 2;
+                context.strokeRect(bx+6, by+4, size-12, 1);
             }
         });
     });
 }
 
-function draw() {
+function render() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // 보드 배경
-    ctx.translate(20, 20);
+    // 1. 보드 배경 및 배치된 블록
     for(let r=0; r<GRID_SIZE; r++) {
         for(let c=0; c<GRID_SIZE; c++) {
-            ctx.fillStyle = '#edf2f7';
+            ctx.fillStyle = '#f0f0f5';
             ctx.beginPath();
-            ctx.roundRect(c*CELL_SIZE, r*CELL_SIZE, CELL_SIZE-2, CELL_SIZE-2, 4);
+            ctx.roundRect(BOARD_OFFSET + c*CELL_SIZE, BOARD_OFFSET + r*CELL_SIZE, CELL_SIZE-3, CELL_SIZE-3, 5);
             ctx.fill();
             if(board[r][c] !== null) {
-                drawBlock(ctx, [[1]], c*CELL_SIZE, r*CELL_SIZE, board[r][c], 1);
+                drawBlock(ctx, [[1]], BOARD_OFFSET + c*CELL_SIZE, BOARD_OFFSET + r*CELL_SIZE, board[r][c], 1);
             }
         }
     }
-    ctx.translate(-20, -20);
 
-    // 하단 핸드 블록
+    // 2. 하단 블록들
     hand.forEach(b => {
-        if(b !== draggingBlock) {
-            drawBlock(ctx, b.shape, b.x, b.y, b.colorIdx, 0.7);
-        }
+        if(b !== draggingBlock) drawBlock(ctx, b.shape, b.x, b.y, b.colorIdx, 0.7);
     });
 
-    // 드래그 중인 블록
+    // 3. 드래그 중인 블록 (마우스 따라다님)
     if(draggingBlock) {
-        drawBlock(ctx, draggingBlock.shape, draggingBlock.x, draggingBlock.y, draggingBlock.colorIdx, 1);
+        drawBlock(ctx, draggingBlock.shape, mouseX - draggingBlock.w/2, mouseY - draggingBlock.h/2, draggingBlock.colorIdx, 1);
     }
 
-    // 파티클
-    updateParticles();
+    requestAnimationFrame(render);
 }
 
-function updateParticles() {
-    particles.forEach((p, i) => {
-        p.x += p.vx; p.y += p.vy; p.alpha -= 0.05;
-        if(p.alpha <= 0) particles.splice(i, 1);
-        else {
-            ctx.globalAlpha = p.alpha;
-            ctx.fillStyle = p.color;
-            ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2); ctx.fill();
-        }
-    });
-    ctx.globalAlpha = 1;
-}
-
-// 드래그 로직
+// 이벤트 리스너
 canvas.addEventListener('mousedown', e => {
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    const r = canvas.getBoundingClientRect();
+    const mx = e.clientX - r.left;
+    const my = e.clientY - r.top;
 
     hand.forEach(b => {
-        if(mx > b.x && mx < b.x + b.width && my > b.y && my < b.y + b.height) {
+        if(mx > b.x && mx < b.x + b.w && my > b.y && my < b.y + b.h) {
             draggingBlock = b;
-            dragOffset.x = mx - b.x;
-            dragOffset.y = my - b.y;
         }
     });
 });
 
 window.addEventListener('mousemove', e => {
-    if(!draggingBlock) return;
-    const rect = canvas.getBoundingClientRect();
-    draggingBlock.x = e.clientX - rect.left - dragOffset.x;
-    draggingBlock.y = e.clientY - rect.top - dragOffset.y;
+    const r = canvas.getBoundingClientRect();
+    mouseX = e.clientX - r.left;
+    mouseY = e.clientY - r.top;
 });
 
-window.addEventListener('mouseup', e => {
+window.addEventListener('mouseup', () => {
     if(!draggingBlock) return;
-    
-    const bx = Math.round((draggingBlock.x - 20) / CELL_SIZE);
-    const by = Math.round((draggingBlock.y - 20) / CELL_SIZE);
 
-    if(canPlace(draggingBlock.shape, by, bx)) {
-        placeBlock(draggingBlock.shape, by, bx, draggingBlock.colorIdx);
+    // 보드 위치 계산 (블록의 왼쪽 상단 기준)
+    const gridX = Math.round((mouseX - draggingBlock.w/2 - BOARD_OFFSET) / CELL_SIZE);
+    const gridY = Math.round((mouseY - draggingBlock.h/2 - BOARD_OFFSET) / CELL_SIZE);
+
+    if(canPlace(draggingBlock.shape, gridY, gridX)) {
+        placeBlock(draggingBlock.shape, gridY, gridX, draggingBlock.colorIdx);
         hand = hand.filter(b => b !== draggingBlock);
-        if(hand.length === 0) generateHand();
+        if(hand.length === 0) createHand();
         checkLines();
-    } else {
-        draggingBlock.x = draggingBlock.initialX;
-        draggingBlock.y = draggingBlock.initialY;
     }
+    
     draggingBlock = null;
 });
 
@@ -209,9 +174,8 @@ function canPlace(shape, row, col) {
     for(let r=0; r<shape.length; r++) {
         for(let c=0; c<shape[r].length; c++) {
             if(shape[r][c]) {
-                if(row+r < 0 || row+r >= GRID_SIZE || col+c < 0 || col+c >= GRID_SIZE || board[row+r][col+c] !== null) {
-                    return false;
-                }
+                let nr = row + r, nc = col + c;
+                if(nr < 0 || nr >= GRID_SIZE || nc < 0 || nc >= GRID_SIZE || board[nr][nc] !== null) return false;
             }
         }
     }
@@ -224,43 +188,36 @@ function placeBlock(shape, row, col, colorIdx) {
             if(cell) board[row+r][col+c] = colorIdx;
         });
     });
+    score += 10; // 블록 배치 점수
+    updateScore();
 }
 
 function checkLines() {
-    let rClear = [], cClear = [];
-    for(let r=0; r<GRID_SIZE; r++) if(board[r].every(v => v !== null)) rClear.push(r);
+    let rToClear = [], cToClear = [];
+    for(let r=0; r<GRID_SIZE; r++) if(board[r].every(v => v !== null)) rToClear.push(r);
     for(let c=0; c<GRID_SIZE; c++) {
         let full = true;
         for(let r=0; r<GRID_SIZE; r++) if(board[r][c] === null) full = false;
-        if(full) cClear.push(c);
+        if(full) cToClear.push(c);
     }
 
-    if(rClear.length || cClear.length) {
-        heartEl.classList.remove('beat'); void heartEl.offsetWidth; heartEl.classList.add('beat');
-        rClear.forEach(r => {
-            for(let c=0; c<GRID_SIZE; c++) spawnParticles(r, c, board[r][c]), board[r][c] = null;
-        });
-        cClear.forEach(c => {
-            for(let r=0; r<GRID_SIZE; r++) if(board[r][c]!==null) spawnParticles(r, c, board[r][c]), board[r][c] = null;
-        });
-        score += (rClear.length + cClear.length) * 100;
-        scoreEl.innerText = score;
+    if(rToClear.length || cToClear.length) {
+        rToClear.forEach(r => board[r].fill(null));
+        cToClear.forEach(c => { for(let r=0; r<GRID_SIZE; r++) board[r][c] = null; });
+        score += (rToClear.length + cToClear.length) * 100;
+        updateScore();
+        heartBeat();
     }
 }
 
-function spawnParticles(r, c, colorIdx) {
-    for(let i=0; i<5; i++) {
-        particles.push({
-            x: 20 + c*CELL_SIZE + 22, y: 20 + r*CELL_SIZE + 22,
-            vx: (Math.random()-0.5)*8, vy: (Math.random()-0.5)*8,
-            alpha: 1, color: COLORS[colorIdx].b
-        });
-    }
+function updateScore() { scoreEl.innerText = score; }
+function heartBeat() {
+    heartEl.classList.add('beating');
+    setTimeout(() => heartEl.classList.remove('beating'), 300);
 }
 
-generateHand();
-function loop() { draw(); requestAnimationFrame(loop); }
-loop();
+createHand();
+render();
 </script>
 </body>
 </html>
